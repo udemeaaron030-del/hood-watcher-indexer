@@ -54,6 +54,20 @@ app.get('/api/token/:address/trades', (req, res) => {
   }
 });
 
+// ── DIAGNOSTIC: raw recent transfers for a token, no pair filter ──
+// Use this to check whether a token's known pair address ever actually shows up as a from/to on a
+// transfer — if it never does, that DEX routes trades through something other than the pair contract
+// directly (an intermediary router/vault), and pair-based buy/sell detection won't work for it.
+app.get('/api/token/:address/transfers', (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const rows = stmts.getTokenTransfers.all(req.params.address.toLowerCase(), limit, 0);
+    res.json({ ok: true, data: rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ── TOKEN TOP TRADERS ──
 app.get('/api/token/:address/traders', (req, res) => {
   try {
