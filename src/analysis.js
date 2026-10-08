@@ -155,10 +155,9 @@ function getTopTraders(token, limit = 20) {
   } catch (e) { return []; }
 }
 
-// Protocol-agnostic version of getTokenTrades: given a pair address (the caller already knows
-// this — e.g. from DexScreener, which correctly identifies the pair regardless of DEX protocol),
-// derive buy/sell directly from ERC-20 Transfer direction instead of trying to decode that DEX's
-// own Swap event. A transfer FROM the pair TO a wallet is a buy; FROM a wallet TO the pair is a sell.
+// Protocol-agnostic version of getTokenTrades: given a pair/pool address, derive buy/sell directly
+// from ERC-20 Transfer direction instead of trying to decode that DEX's own Swap event. A transfer
+// FROM the pool TO a wallet is a buy; FROM a wallet TO the pool is a sell.
 function getTokenTradesByPair(token, pairAddr, limit = 50, offset = 0) {
   try {
     const t = token.toLowerCase();
@@ -176,6 +175,18 @@ function getTokenTradesByPair(token, pairAddr, limit = 50, offset = 0) {
       };
     });
   } catch (e) { return []; }
+}
+
+// Finds the real trading contract for a token automatically, rather than trusting a pair address
+// supplied by the caller — some DEXes (bonding-curve launchpads especially) don't actually move
+// tokens through the address an aggregator like DexScreener labels as the "pair."
+function getTokenTradesAuto(token, limit = 50, offset = 0) {
+  try {
+    const t = token.toLowerCase();
+    const top = stmts.getTopTransferCounterparty.get(t, t);
+    if (!top || !top.addr) return { trades: [], inferredPool: null };
+    return { trades: getTokenTradesByPair(t, top.addr, limit, offset), inferredPool: top.addr };
+  } catch (e) { return { trades: [], inferredPool: null }; }
 }
 
 // Get wallet activity
@@ -213,6 +224,7 @@ module.exports = {
   getHolderCount,
   getTokenTrades,
   getTokenTradesByPair,
+  getTokenTradesAuto,
   getTopTraders,
   getWalletActivity,
   getWhaleSwaps,

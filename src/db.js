@@ -170,6 +170,22 @@ const stmts = {
     ORDER BY block_number DESC LIMIT ? OFFSET ?
   `),
 
+  // Auto-detect the real trading contract for a token: whichever address shows up most often
+  // as a transfer counterparty is almost certainly the pool/vault/bonding-curve contract actually
+  // moving the token — this works even when a DEX's real custody contract doesn't match whatever
+  // address an aggregator like DexScreener reports as the "pair" (true for some launchpad-style AMMs).
+  getTopTransferCounterparty: db.prepare(`
+    SELECT addr, COUNT(*) as cnt FROM (
+      SELECT from_addr as addr FROM transfers WHERE token = ?
+      UNION ALL
+      SELECT to_addr as addr FROM transfers WHERE token = ?
+    )
+    WHERE addr != '0x0000000000000000000000000000000000000000'
+    GROUP BY addr
+    ORDER BY cnt DESC
+    LIMIT 1
+  `),
+
   getTokenSwaps: db.prepare(`
     SELECT s.*, p.token0, p.token1 FROM swaps s
     JOIN pairs p ON s.pair = p.address

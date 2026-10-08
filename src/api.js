@@ -37,18 +37,27 @@ app.get('/api/token/:address', (req, res) => {
 });
 
 // ── TOKEN TRADES ──
-// Pass ?pair=0x... (the pair/pool address — the frontend already has this from DexScreener,
-// which identifies pairs correctly across every DEX protocol) to get protocol-agnostic buy/sell
-// detection via plain Transfer events. Without it, falls back to the Uniswap-V2-only Swap decoder,
-// which only works for pairs on actual V2 forks.
+// Buy/sell is derived from plain Transfer direction relative to the token's real trading contract —
+// works regardless of DEX protocol (V2/V3/V4/bonding-curve launchpads/anything), since every DEX
+// still has to move the token via a standard ERC-20 transfer eventually.
+// If ?pair=0x... is given (e.g. from DexScreener) it's tried first; if that returns nothing (some
+// DEXes, especially bonding-curve launchpads, don't actually move tokens through the address an
+// aggregator reports as the "pair"), it automatically falls back to detecting the real trading
+// contract itself — whichever address appears most often as a transfer counterparty for this token.
 app.get('/api/token/:address/trades', (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const offset = parseInt(req.query.offset) || 0;
-    const trades = req.query.pair
-      ? analysis.getTokenTradesByPair(req.params.address, req.query.pair, limit, offset)
-      : analysis.getTokenTrades(req.params.address, limit, offset);
-    res.json({ ok: true, data: trades });
+
+    if (req.query.pair) {
+      const viaPair = analysis.getTokenTradesByPair(req.params.address, req.query.pair, limit, offset);
+      if (viaPair.length) return res.json({ ok: true, data: viaPair, source: 'pair' });
+    }
+
+    const auto = analysis.getTokenTradesAuto(req.params.address, limit, offset);
+    if (auto.trades.length) return res.json({ ok: true, data: auto.trades, source: 'auto', inferredPool: auto.inferredPool });
+
+    res.json({ ok: true, data: [] });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
