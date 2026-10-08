@@ -8,6 +8,12 @@ module.exports = {
   FRONTEND_URL: process.env.FRONTEND_URL || '*',
   CHAIN_ID: 4663,
 
+  // Where the SQLite file lives. Set this to an absolute path pointing at a mounted volume
+  // (e.g. '/app/data/indexer.db' on Railway) so the indexed history survives redeploys instead of
+  // resetting every time the container's ephemeral filesystem is wiped. Leave unset to fall back to
+  // a 'data/' folder next to the project root (fine locally, NOT persistent on Railway's default storage).
+  DB_PATH: process.env.DB_PATH || null,
+
   // Uniswap V2 event signatures (Robinhood Chain DEXes are Uni V2 forks)
   EVENTS: {
     TRANSFER: '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
