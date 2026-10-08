@@ -50,8 +50,7 @@ db.exec(`
     token TEXT,
     from_addr TEXT,
     to_addr TEXT,
-    amount TEXT,
-    FOREIGN KEY (token) REFERENCES tokens(address)
+    amount TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_transfers_token ON transfers(token);
   CREATE INDEX IF NOT EXISTS idx_transfers_from ON transfers(from_addr);
@@ -85,6 +84,37 @@ db.exec(`
     created_time INTEGER
   );
 `);
+
+// ── MIGRATION: drop a stale FOREIGN KEY constraint on transfers(token) from an earlier schema.
+// That constraint required a matching row in `tokens` before any transfer could be inserted, but
+// nothing ever populated `tokens` for arbitrary ERC-20s — so every transfer insert was silently
+// rejected. CREATE TABLE IF NOT EXISTS above won't touch an already-existing table, so this check
+// runs every startup and rebuilds `transfers` without the constraint if the old one is still there.
+const transfersSql = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='transfers'`).get();
+if (transfersSql && transfersSql.sql && transfersSql.sql.includes('FOREIGN KEY')) {
+  console.log('[db] Migrating transfers table: removing stale FOREIGN KEY constraint...');
+  db.exec(`
+    ALTER TABLE transfers RENAME TO transfers_old;
+    CREATE TABLE transfers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tx_hash TEXT,
+      block_number INTEGER,
+      timestamp INTEGER,
+      token TEXT,
+      from_addr TEXT,
+      to_addr TEXT,
+      amount TEXT
+    );
+    INSERT INTO transfers (id, tx_hash, block_number, timestamp, token, from_addr, to_addr, amount)
+      SELECT id, tx_hash, block_number, timestamp, token, from_addr, to_addr, amount FROM transfers_old;
+    DROP TABLE transfers_old;
+    CREATE INDEX IF NOT EXISTS idx_transfers_token ON transfers(token);
+    CREATE INDEX IF NOT EXISTS idx_transfers_from ON transfers(from_addr);
+    CREATE INDEX IF NOT EXISTS idx_transfers_to ON transfers(to_addr);
+    CREATE INDEX IF NOT EXISTS idx_transfers_block ON transfers(block_number);
+  `);
+  console.log('[db] Migration complete.');
+}
 
 // ── PREPARED STATEMENTS ──
 const stmts = {
