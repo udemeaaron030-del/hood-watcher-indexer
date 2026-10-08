@@ -3,11 +3,17 @@ const cors = require('cors');
 const config = require('./config');
 const { stmts } = require('./db');
 const analysis = require('./analysis');
-const { getStats } = require('./indexer');
+const { getStats, client } = require('./indexer');
 
 const app = express();
 app.use(cors({ origin: config.FRONTEND_URL }));
 app.use(express.json());
+
+// Minimal ERC-20 ABI fragment, just for reading decimals() on demand.
+const ERC20_DECIMALS_ABI = [{ name: 'decimals', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint8' }] }];
+const ERC20_SYMBOL_ABI = [{ name: 'symbol', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] }];
+const decimalsCache = new Map();
+const symbolCache = new Map();
 
 // ── STATUS ──
 app.get('/api/status', (req, res) => {
@@ -21,6 +27,38 @@ app.get('/api/token/:address/security', (req, res) => {
     res.json({ ok: true, data });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── TOKEN DECIMALS ──
+// Reads decimals() straight from the token contract on-chain, so the frontend can convert raw
+// transfer amounts correctly instead of assuming every token uses 18 decimals. Cached in memory
+// (per-process) since decimals() never changes for a deployed token; falls back to 18 if the
+// contract doesn't implement it or the call fails.
+app.get('/api/token/:address/decimals', async (req, res) => {
+  const addr = req.params.address.toLowerCase();
+  if (decimalsCache.has(addr)) return res.json({ ok: true, data: decimalsCache.get(addr) });
+  try {
+    const d = await client.readContract({ address: addr, abi: ERC20_DECIMALS_ABI, functionName: 'decimals' });
+    const decimals = Number(d);
+    decimalsCache.set(addr, decimals);
+    res.json({ ok: true, data: decimals });
+  } catch (e) {
+    decimalsCache.set(addr, 18);
+    res.json({ ok: true, data: 18, note: 'fallback: decimals() call failed on-chain' });
+  }
+});
+
+// ── TOKEN SYMBOL ── (used to label raw trade amounts with the right ticker)
+app.get('/api/token/:address/symbol', async (req, res) => {
+  const addr = req.params.address.toLowerCase();
+  if (symbolCache.has(addr)) return res.json({ ok: true, data: symbolCache.get(addr) });
+  try {
+    const s = await client.readContract({ address: addr, abi: ERC20_SYMBOL_ABI, functionName: 'symbol' });
+    symbolCache.set(addr, s);
+    res.json({ ok: true, data: s });
+  } catch (e) {
+    res.json({ ok: true, data: null });
   }
 });
 
