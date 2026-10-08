@@ -1,9 +1,13 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const config = require('./config');
 
-const DB_PATH = path.join(__dirname, '..', 'data', 'indexer.db');
+// Honors DB_PATH (set it to a mounted-volume path on Railway so data survives redeploys) and
+// otherwise falls back to the old 'data/indexer.db' next to the project root.
+const DB_PATH = config.DB_PATH || path.join(__dirname, '..', 'data', 'indexer.db');
 const fs = require('fs');
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+console.log(`[db] Using SQLite file at ${DB_PATH}`);
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
